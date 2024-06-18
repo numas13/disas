@@ -5,7 +5,7 @@ use std::{
     io::{self, Write},
 };
 
-use disasm::{Arch, Disasm, Insn, Options, PrinterInfo};
+use disasm::{Arch, Bundle, Disasm, Options, PrinterInfo};
 use object::{Object, ObjectSection, SymbolMap, SymbolMapName};
 
 #[derive(Copy, Clone)]
@@ -17,14 +17,16 @@ impl PrinterInfo for Info<'_> {
     }
 }
 
-/// Reads a file and displays the name of each section.
 fn main() -> Result<(), Box<dyn Error>> {
     let path = env::args().nth(1).unwrap_or_else(|| String::from("a.out"));
     let data = fs::read(&path)?;
     let file = object::File::parse(&*data)?;
     let symbols = file.symbol_map();
     let info = Info(&symbols);
-    let opts = Options { alias: true };
+    let opts = Options {
+        alias: false,
+        abi_regs: true,
+    };
 
     Disasm::new(Arch::Riscv, 0, opts)?;
 
@@ -42,8 +44,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             writeln!(out, "Disassembly of section {section_name}:")?;
 
             let mut data = section.data()?;
-            let mut insn = Insn::default();
+            let mut bundle = Bundle::empty();
             let mut symbol = None;
+
+            // TODO: bytes_per_line
+            let chunk = 4;
+            // TODO: chunk_encoding
+            let skip_zero = 2;
 
             while data.len() >= 2 {
                 let address = disasm.address();
@@ -58,32 +65,62 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
 
-                let (len, is_ok) = match disasm.decode(data, &mut insn) {
-                    Ok(len) => (len, true),
-                    Err(len) => (len, false),
-                };
-
-                // print address
-                write!(out, "{address:8x}:\t",)?;
-
-                // print bytes
-                for i in data.iter().take(len).rev() {
-                    write!(out, "{i:02x}")?;
-                }
-                // INFO: to match gas output
-                let width = if len == 2 { 20 } else { 18 };
-                write!(out, "{1:0$}\t", width - len * 2, ' ')?;
-
-                if is_ok {
-                    // print instuctions and operands
-                    writeln!(out, "{}", insn.printer(&disasm, info))?;
-                } else {
-                    writeln!(out, "failed to decode")?;
+                if data.len() >= skip_zero && data.iter().take(skip_zero).all(|i| *i == 0) {
+                    let zeroes = data.iter().position(|i| *i != 0).unwrap_or(data.len());
+                    writeln!(out, "\t...")?;
+                    let skip = zeroes & !(skip_zero - 1);
+                    disasm.skip(skip);
+                    data = &data[skip..];
+                    continue;
                 }
 
-                data = &data[len..];
+                match disasm.decode(data, &mut bundle) {
+                    Ok(len) => {
+                        let mut n = 0;
+                        for insn in &bundle {
+                            write!(out, "{address:8x}:\t",)?;
+
+                            let mut l = 0;
+                            if n < len {
+                                for i in data[n..len].iter().take(chunk).rev() {
+                                    write!(out, "{i:02x}")?;
+                                    n += 1;
+                                    l += 1;
+                                }
+                            } else {
+                                l = chunk;
+                                write!(out, "{1:0$}", chunk, ' ')?;
+                            }
+
+                            // INFO: align to match gas output
+                            let width = if l == 2 { 20 } else { 18 };
+                            write!(out, "{1:0$}\t", width - l * 2, ' ')?;
+                            writeln!(out, "{}", insn.printer(&disasm, info))?;
+                        }
+                        while n < len {
+                            write!(out, "{address:8x}:\t",)?;
+                            for i in data[n..len].iter().take(chunk).rev() {
+                                write!(out, "{i:02x}")?;
+                                n += 1;
+                            }
+                            writeln!(out)?;
+                        }
+                        data = &data[len..];
+                    }
+                    Err(len) => {
+                        // TODO:
+                        write!(out, "{address:8x}:\t",)?;
+                        for i in data.iter().take(len).rev() {
+                            write!(out, "{i:02x}")?;
+                        }
+                        // INFO: align to match gas output
+                        let width = if len == 2 { 20 } else { 18 };
+                        write!(out, "{1:0$}\t", width - len * 2, ' ')?;
+                        writeln!(out, "failed to decode")?;
+                        data = &data[len..];
+                    }
+                }
             }
-
             break;
         }
     }
