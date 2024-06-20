@@ -37,7 +37,7 @@ dependencies = [
 
 [[package]]
 name = "decodetree"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "nom",
  "nom_locate",
@@ -64,7 +64,7 @@ dependencies = [
 
 [[package]]
 name = "disasm"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "decodetree",
 ]

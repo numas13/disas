@@ -5,15 +5,17 @@ use std::{
     io::{self, Write},
 };
 
-use disasm::{Arch, Bundle, Disasm, Options, PrinterInfo};
+use disasm::{arch::riscv, Arch, Bundle, Disasm, Options, PrinterInfo};
 use object::{Object, ObjectSection, SymbolMap, SymbolMapName};
 
 #[derive(Copy, Clone)]
-struct Info<'a>(&'a SymbolMap<SymbolMapName<'a>>);
+struct Info<'a> {
+    symbols: &'a SymbolMap<SymbolMapName<'a>>,
+}
 
 impl PrinterInfo for Info<'_> {
     fn get_symbol(&self, address: u64) -> Option<(u64, &str)> {
-        self.0.get(address).map(|s| (s.address(), s.name()))
+        self.symbols.get(address).map(|s| (s.address(), s.name()))
     }
 }
 
@@ -22,13 +24,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let data = fs::read(&path)?;
     let file = object::File::parse(&*data)?;
     let symbols = file.symbol_map();
-    let info = Info(&symbols);
+    let info = Info { symbols: &symbols };
+    let rv_opts = riscv::Options {
+        ext: riscv::Extensions::all(),
+        ..Default::default()
+    };
     let opts = Options {
         alias: false,
-        abi_regs: true,
+        ..Options::default()
     };
 
-    Disasm::new(Arch::Riscv, 0, opts)?;
+    Disasm::new(Arch::Riscv(rv_opts), 0, opts);
 
     println!();
     println!("{path}:     file format elf64-littleriscv"); // TODO:
@@ -38,7 +44,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for section in file.sections() {
         let section_name = section.name()?;
         if section_name == ".text" {
-            let mut disasm = Disasm::new(Arch::Riscv, section.address(), opts)?;
+            let mut disasm = Disasm::new(Arch::Riscv(rv_opts), section.address(), opts);
             let stdout = io::stdout();
             let out = &mut stdout.lock();
             writeln!(out, "Disassembly of section {section_name}:")?;
@@ -74,11 +80,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     continue;
                 }
 
+                let addr_width = if address >= 0x8000 { 8 } else { 4 };
+
                 match disasm.decode(data, &mut bundle) {
                     Ok(len) => {
+                        let mut insns = bundle.iter();
                         let mut n = 0;
-                        for insn in &bundle {
-                            write!(out, "{address:8x}:\t",)?;
+                        let mut i = 0;
+                        while n < len || i < bundle.len() {
+                            write!(out, "{address:addr_width$x}:\t")?;
 
                             let mut l = 0;
                             if n < len {
@@ -92,24 +102,20 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 write!(out, "{1:0$}", chunk, ' ')?;
                             }
 
-                            // INFO: align to match gas output
-                            let width = if l == 2 { 20 } else { 18 };
-                            write!(out, "{1:0$}\t", width - l * 2, ' ')?;
-                            writeln!(out, "{}", insn.printer(&disasm, info))?;
-                        }
-                        while n < len {
-                            write!(out, "{address:8x}:\t",)?;
-                            for i in data[n..len].iter().take(chunk).rev() {
-                                write!(out, "{i:02x}")?;
-                                n += 1;
+                            if let Some(insn) = insns.next() {
+                                // INFO: align to match gas output
+                                let width = if l == 2 { 20 } else { 18 };
+                                write!(out, "{1:0$}\t", width - l * 2, ' ')?;
+                                write!(out, "{}", insn.printer(&disasm, info))?;
                             }
                             writeln!(out)?;
+                            i += 1;
                         }
                         data = &data[len..];
                     }
                     Err(len) => {
                         // TODO:
-                        write!(out, "{address:8x}:\t",)?;
+                        write!(out, "{address:addr_width$x}:\t",)?;
                         for i in data.iter().take(len).rev() {
                             write!(out, "{i:02x}")?;
                         }
