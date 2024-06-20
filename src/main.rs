@@ -73,11 +73,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                 if data.len() >= skip_zero && data.iter().take(skip_zero).all(|i| *i == 0) {
                     let zeroes = data.iter().position(|i| *i != 0).unwrap_or(data.len());
-                    writeln!(out, "\t...")?;
-                    let skip = zeroes & !(skip_zero - 1);
-                    disasm.skip(skip);
-                    data = &data[skip..];
-                    continue;
+                    let sym = symbols.get(address + zeroes as u64);
+                    if sym != new_symbol || zeroes >= (skip_zero * 2 - 1) {
+                        writeln!(out, "\t...")?;
+                        let skip = zeroes & !(skip_zero - 1);
+                        disasm.skip(skip);
+                        data = &data[skip..];
+                        continue;
+                    }
                 }
 
                 let addr_width = if address >= 0x8000 { 8 } else { 4 };
