@@ -19,9 +19,30 @@ impl PrinterInfo for Info<'_> {
     }
 }
 
+#[derive(Default)]
+struct Cli {
+    alias: bool,
+    path: String,
+}
+
+fn parse_cli() -> Cli {
+    let mut cli = Cli { alias: true, ..Cli::default() };
+    for i in env::args().skip(1) {
+        match i.as_str() {
+            "--no-aliases" => cli.alias = false,
+            _ => {
+                cli.path = i;
+                return cli;
+            }
+        }
+    }
+    cli.path = String::from("a.out");
+    cli
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let path = env::args().nth(1).unwrap_or_else(|| String::from("a.out"));
-    let data = fs::read(&path)?;
+    let cli = parse_cli();
+    let data = fs::read(&cli.path)?;
     let file = object::File::parse(&*data)?;
     let symbols = file.symbol_map();
     let info = Info { symbols: &symbols };
@@ -30,14 +51,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         ..Default::default()
     };
     let opts = Options {
-        alias: false,
+        alias: cli.alias,
         ..Options::default()
     };
 
     Disasm::new(Arch::Riscv(rv_opts), 0, opts);
 
     println!();
-    println!("{path}:     file format elf64-littleriscv"); // TODO:
+    println!("{}:     file format elf64-littleriscv", cli.path); // TODO:
     println!();
     println!();
 
