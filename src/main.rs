@@ -1,9 +1,4 @@
-use std::{
-    env,
-    error::Error,
-    fs,
-    io::{self, Write},
-};
+use std::{env, error::Error, fs, io::Write};
 
 use disasm::{arch::riscv, Arch, Bundle, Disasm, Options, PrinterInfo};
 use object::{Object, ObjectSection, SymbolMap, SymbolMapName};
@@ -26,7 +21,10 @@ struct Cli {
 }
 
 fn parse_cli() -> Cli {
-    let mut cli = Cli { alias: true, ..Cli::default() };
+    let mut cli = Cli {
+        alias: true,
+        ..Cli::default()
+    };
     for i in env::args().skip(1) {
         match i.as_str() {
             "--no-aliases" => cli.alias = false,
@@ -41,6 +39,19 @@ fn parse_cli() -> Cli {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    #[cfg(not(feature = "block-buffering"))]
+    let out = {
+        use std::io;
+        let stdout = io::stdout();
+        &mut stdout.lock()
+    };
+
+    #[cfg(feature = "block-buffering")]
+    let out = {
+        use std::{fs::File, io::BufWriter, os::fd::FromRawFd};
+        &mut BufWriter::new(unsafe { File::from_raw_fd(1) })
+    };
+
     let cli = parse_cli();
     let data = fs::read(&cli.path)?;
     let file = object::File::parse(&*data)?;
@@ -57,17 +68,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     Disasm::new(Arch::Riscv(rv_opts), 0, opts);
 
-    println!();
-    println!("{}:     file format elf64-littleriscv", cli.path); // TODO:
-    println!();
-    println!();
+    writeln!(out)?;
+    writeln!(out, "{}:     file format elf64-littleriscv", cli.path)?; // TODO:
+    writeln!(out)?;
+    writeln!(out)?;
 
     for section in file.sections() {
         let section_name = section.name()?;
         if section_name == ".text" {
             let mut disasm = Disasm::new(Arch::Riscv(rv_opts), section.address(), opts);
-            let stdout = io::stdout();
-            let out = &mut stdout.lock();
             writeln!(out, "Disassembly of section {section_name}:")?;
 
             let mut data = section.data()?;
