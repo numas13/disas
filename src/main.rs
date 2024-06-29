@@ -1,6 +1,6 @@
 mod cli;
 
-use std::{error::Error, fs, io::Write};
+use std::{error::Error, fs, io::Write, process};
 
 use disasm::{arch::riscv, Arch, Bundle, Disasm, Options, PrinterInfo};
 use object::{Object, ObjectSection, Section, SymbolMap, SymbolMapName};
@@ -26,23 +26,64 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
+    fn get_disasm_arch(file: &object::File) -> Arch {
+        use object::Architecture as A;
+
+        match file.architecture() {
+            A::Riscv32 | A::Riscv64 => Arch::Riscv(riscv::Options {
+                ext: riscv::Extensions::all(),
+                xlen: if file.architecture() == A::Riscv64 {
+                    riscv::Xlen::X64
+                } else {
+                    riscv::Xlen::X32
+                },
+            }),
+            _ => {
+                eprintln!("error: unsupported architecture");
+                process::exit(1);
+            }
+        }
+    }
+
+    fn get_file_format(file: &object::File) -> String {
+        use object::{Architecture as A, Endianness as E, File};
+
+        let mut format = String::new();
+
+        match file {
+            File::Elf32(..) => format.push_str("elf32"),
+            File::Elf64(..) => format.push_str("elf64"),
+            _ => todo!(),
+        }
+
+        format.push('-');
+
+        match file.architecture() {
+            A::Riscv32 | A::Riscv64 => {
+                let endianess = match file.endianness() {
+                    E::Little => "little",
+                    E::Big => "big",
+                };
+                format.push_str(endianess);
+                format.push_str("riscv");
+            }
+            _ => todo!(),
+        }
+
+        format
+    }
+
     fn new(cli: &'a Cli, file: &'a object::File<'a>) -> Self {
         let opts = Options {
             alias: !cli.disassembler_options.iter().any(|i| i == "no-aliases"),
             ..Options::default()
         };
 
-        let opts_riscv = riscv::Options {
-            ext: riscv::Extensions::all(),
-            ..Default::default()
-        };
-        let arch = Arch::Riscv(opts_riscv);
-
-        // TODO: remove
-        Disasm::new(Arch::Riscv(opts_riscv), 0, opts);
+        let arch = Self::get_disasm_arch(file);
+        let format = Self::get_file_format(file);
 
         println!();
-        println!("{}:     file format elf64-littleriscv", cli.path); // TODO:
+        println!("{}:     file format {format}", cli.path);
         println!();
 
         Self { file, opts, arch }
