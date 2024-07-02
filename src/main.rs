@@ -2,7 +2,7 @@ mod cli;
 
 use std::{error::Error, fs, io::Write, process};
 
-use disasm::{arch::riscv, Arch, Bundle, Disasm, Options, PrinterInfo};
+use disasm::{Arch, Bundle, Disasm, Options, PrinterInfo};
 use object::{Object, ObjectSection, Section, SymbolMap, SymbolMapName};
 
 use crate::cli::Cli;
@@ -27,9 +27,11 @@ struct App<'a> {
 
 impl<'a> App<'a> {
     fn get_disasm_arch(file: &object::File) -> Arch {
+        use disasm::arch::*;
         use object::Architecture as A;
 
         match file.architecture() {
+            #[cfg(feature = "riscv")]
             A::Riscv32 | A::Riscv64 => Arch::Riscv(riscv::Options {
                 ext: riscv::Extensions::all(),
                 xlen: if file.architecture() == A::Riscv64 {
@@ -109,14 +111,13 @@ impl<'a> App<'a> {
         let mut bundle = Bundle::empty();
         let mut symbol = None;
 
-        // TODO: bytes_per_line
-        let chunk = 4;
-        // TODO: chunk_encoding
-        let skip_zero = 2;
+        let bytes_per_line = self.arch.bytes_per_line();
+        let min_len = disasm.insn_size_min();
+        let skip_zeroes = self.arch.skip_zeroes();
 
         let stdout = std::io::stdout();
 
-        #[cfg(not(all(unix, feature = "block-buffering")))]
+        #[allow(unused_mut)]
         let mut out = stdout.lock();
 
         #[cfg(all(unix, feature = "block-buffering"))]
@@ -126,10 +127,10 @@ impl<'a> App<'a> {
                 io::BufWriter,
                 os::fd::{AsRawFd, FromRawFd},
             };
-            BufWriter::new(unsafe { File::from_raw_fd(stdout.lock().as_raw_fd()) })
+            BufWriter::new(unsafe { File::from_raw_fd(out.as_raw_fd()) })
         };
 
-        while data.len() >= 2 {
+        while data.len() >= min_len {
             let out = &mut out;
             let address = disasm.address();
             let new_symbol = symbols.get(address);
@@ -143,64 +144,71 @@ impl<'a> App<'a> {
                 }
             }
 
-            if data.len() >= skip_zero && data.iter().take(skip_zero).all(|i| *i == 0) {
+            if data.len() >= skip_zeroes && data.iter().take(skip_zeroes).all(|i| *i == 0) {
                 let zeroes = data.iter().position(|i| *i != 0).unwrap_or(data.len());
                 let sym = symbols.get(address + zeroes as u64);
-                if sym != new_symbol || zeroes >= (skip_zero * 2 - 1) {
+                if sym != new_symbol || zeroes >= (skip_zeroes * 2 - 1) {
                     writeln!(out, "\t...")?;
-                    let skip = zeroes & !(skip_zero - 1);
+                    let skip = zeroes & !(skip_zeroes - 1);
                     disasm.skip(skip);
                     data = &data[skip..];
                     continue;
                 }
             }
 
-            let addr_width = if address >= 0x8000 { 8 } else { 4 };
+            let (len, is_ok, mut err_msg) = match disasm.decode(data, &mut bundle) {
+                Ok(len) => (len, true, None),
+                Err(err) => {
+                    let len = match err {
+                        disasm::Error::More(_) => data.len(),
+                        disasm::Error::Failed(len) => len,
+                    };
+                    (len, false, Some("failed to decode"))
+                }
+            };
 
-            match disasm.decode(data, &mut bundle) {
-                Ok(len) => {
-                    let mut insns = bundle.iter();
-                    let mut n = 0;
-                    let mut i = 0;
-                    while n < len || i < bundle.len() {
-                        write!(out, "{address:addr_width$x}:\t")?;
+            let addr_width = if address >= 0x1000 { 8 } else { 4 };
+            let bytes_per_chunk = self.arch.bytes_per_chunk(len);
+            let mut insns = bundle.iter();
+            let mut chunks = data[..len].chunks(bytes_per_chunk);
+            let mut l = 0;
+            loop {
+                let insn = if is_ok { insns.next() } else { None };
+                if l >= len && insn.is_none() {
+                    break;
+                }
+                write!(out, "{:addr_width$x}:\t", address + l as u64)?;
 
-                        let mut l = 0;
-                        if n < len {
-                            for i in data[n..len].iter().take(chunk).rev() {
+                let mut p = 0;
+                let mut c = 0;
+                if l < len {
+                    for _ in (0..bytes_per_line).step_by(bytes_per_chunk) {
+                        c += 1;
+                        if let Some(chunk) = chunks.next() {
+                            for i in chunk.iter().rev() {
                                 write!(out, "{i:02x}")?;
-                                n += 1;
-                                l += 1;
                             }
-                        } else {
-                            l = chunk;
-                            write!(out, "{1:0$}", chunk, ' ')?;
+                            out.write_all(b" ")?;
+                            p += chunk.len();
+                            l += chunk.len();
+                            c -= 1;
                         }
+                    }
+                }
 
-                        if let Some(insn) = insns.next() {
-                            // INFO: align to match gas output
-                            let width = if l == 2 { 20 } else { 18 };
-                            write!(out, "{1:0$}\t", width - l * 2, ' ')?;
-                            write!(out, "{}", insn.printer(&disasm, info))?;
-                        }
-                        writeln!(out)?;
-                        i += 1;
-                    }
-                    data = &data[len..];
+                let width = (bytes_per_line - p) * 2 + c;
+
+                if let Some(insn) = insn {
+                    write!(out, "{:width$}\t{}", "", insn.printer(&disasm, info))?;
                 }
-                Err(len) => {
-                    // TODO:
-                    write!(out, "{address:addr_width$x}:\t",)?;
-                    for i in data.iter().take(len).rev() {
-                        write!(out, "{i:02x}")?;
-                    }
-                    // INFO: align to match gas output
-                    let width = if len == 2 { 20 } else { 18 };
-                    write!(out, "{1:0$}\t", width - len * 2, ' ')?;
-                    writeln!(out, "failed to decode")?;
-                    data = &data[len..];
+
+                if let Some(err) = err_msg.take() {
+                    write!(out, "{:width$}\t{err}", "")?;
                 }
+
+                writeln!(out)?;
             }
+            data = &data[len..];
         }
 
         #[cfg(all(unix, feature = "block-buffering"))]
