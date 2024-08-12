@@ -14,8 +14,9 @@ default-target = "x86_64-unknown-linux-gnu"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [features]
-default = ["all-arch", "block-buffering"]
+default = ["all-arch", "block-buffering", "parallel"]
 block-buffering = []
+parallel = []
 
 riscv = ["disasm/riscv"]
 all-arch = [
@@ -24,5 +25,11 @@ all-arch = [
 
 [dependencies]
 object = "0.34"
-disasm = { version = "0.3.3", features = ["std", "print"] }
+disasm = { version = "0.3.4", features = ["std", "print"] }
 bpaf = { version = "0.9", features = ["autocomplete", "dull-color"] }
+log = "0.4.22"
+
+[dependencies.env_logger]
+version = "0.10.2"
+default-features = false
+features = ["auto-color", "humantime"]

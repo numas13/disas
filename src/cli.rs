@@ -8,6 +8,7 @@ pub struct Cli {
     pub disassemble_symbols: Vec<String>,
     pub sections: Vec<String>,
     pub disassembler_options: Vec<String>,
+    pub threads: usize,
     pub path: String,
 }
 
@@ -53,6 +54,25 @@ pub fn parse_cli() -> Cli {
         .argument("NAME")
         .many();
 
+    let num_cpus = std::thread::available_parallelism()
+        .map(|i| i.get())
+        .unwrap_or(1);
+
+    #[cfg(feature = "parallel")]
+    let threads_help = &*format!("Set the number of threads to use [default: {num_cpus}]");
+
+    #[cfg(not(feature = "parallel"))]
+    let threads_help = "Set the number of threads to use [disabled at compile]";
+
+    let threads = long("threads")
+        .help(threads_help)
+        .argument("NUM")
+        .map(move |i| match i {
+            0 => num_cpus,
+            _ => i,
+        })
+        .fallback(std::cmp::min(4, num_cpus));
+
     let path = positional("FILE")
         .help("File to process")
         .fallback("a.out".into());
@@ -63,6 +83,7 @@ pub fn parse_cli() -> Cli {
         disassemble_symbols,
         sections,
         disassembler_options,
+        threads,
         path,
     })
     .to_options()

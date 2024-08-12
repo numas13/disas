@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate log;
+
 mod cli;
 
 use std::{error::Error, fs, io, process};
@@ -23,6 +26,8 @@ struct App<'a> {
 
     opts: Options,
     arch: Arch,
+
+    threads: usize,
 }
 
 impl<'a> App<'a> {
@@ -88,14 +93,135 @@ impl<'a> App<'a> {
         println!("{}:     file format {format}", cli.path);
         println!();
 
-        Self { file, opts, arch }
+        Self {
+            file,
+            opts,
+            arch,
+            threads: cli.threads,
+        }
     }
 
     fn disassemble_section(&self, section: Section) -> Result<(), Box<dyn Error>> {
         let section_name = section.name()?;
         println!();
         println!("Disassembly of section {section_name}:");
-        self.disassemble_code(section.address(), section.data()?, section_name)?;
+
+        let data = section.data()?;
+        let address = section.address();
+
+        #[cfg(feature = "parallel")]
+        if self.threads > 1 && data.len() >= 1024 * 64 {
+            self.disassemble_code_parallel(address, data, section_name)?;
+            return Ok(());
+        }
+        self.disassemble_code(address, data, section_name)?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "parallel")]
+    fn disassemble_code_parallel(
+        &self,
+        address: u64,
+        data: &[u8],
+        section_name: &str,
+    ) -> Result<(), io::Error> {
+        use disasm::{Bundle, Error};
+        use std::{
+            io::Write,
+            sync::{mpsc, Arc, Condvar, Mutex},
+            thread,
+        };
+
+        // how many instructions decoded per thread
+        let block_insns = 1024 * 16 / 4;
+        debug!("instructions per block {block_insns}");
+
+        thread::scope(|s| {
+            let mut tx = Vec::with_capacity(self.threads);
+            let mut rx = Vec::with_capacity(self.threads);
+
+            for _ in 0..self.threads {
+                let (t, r) = mpsc::sync_channel::<(usize, u64, usize, usize)>(4);
+                tx.push(t);
+                rx.push(r);
+            }
+
+            let current = Arc::new((Mutex::new(0), Condvar::new()));
+            for (thread_id, rx) in rx.into_iter().enumerate() {
+                let current = current.clone();
+                s.spawn(move || {
+                    debug!("thread({thread_id}): start");
+                    let stdout = std::io::stdout();
+                    let symbols = self.file.symbol_map();
+                    let info = Info { symbols: &symbols };
+
+                    let mut disasm = Disasm::new(self.arch, 0, self.opts);
+                    let (current, condvar) = &*current;
+
+                    let mut buffer = Vec::with_capacity(8192);
+                    while let Ok((block, address, start, end)) = rx.recv() {
+                        debug!("thread({thread_id}): disassemble block({block}) at {address:#x}, {} bytes", end - start);
+                        let data = &data[start..end];
+                        buffer.clear();
+                        let mut out = std::io::Cursor::new(&mut buffer);
+                        disasm.skip((address - disasm.address()) as usize);
+                        disasm.print(&mut out, data, section_name, &info, block == 0).unwrap();
+
+                        let lock = current.lock().unwrap();
+                        let mut lock = condvar.wait_while(lock, |cur| *cur != block).unwrap();
+                        let res = stdout.lock().write_all(&buffer);
+                        *lock += 1;
+                        condvar.notify_all();
+
+                        if let Err(err) = res {
+                            if err.kind() == io::ErrorKind::BrokenPipe {
+                                break;
+                            } else {
+                                return Err(err);
+                            }
+                        }
+                    }
+                    debug!("thread({thread_id}): stop");
+                    Ok(())
+                });
+            }
+
+            let mut disasm = Disasm::new(self.arch, address, self.opts);
+            let min_len = disasm.insn_size_min();
+            let mut bundle = Bundle::empty();
+            let mut block = 0;
+            let mut offset = 0;
+            debug!("predecode: start");
+            while data[offset..].len() >= min_len {
+                let mut insns = 0;
+                let start = offset;
+                let address = disasm.address();
+                // TODO: disasm must provide some sort of lenght decoder with respect to
+                // tracking of previous instructions in backends.
+                while insns < block_insns && data[offset..].len() >= min_len {
+                    let len = match disasm.decode(&data[offset..], &mut bundle) {
+                        Ok(len) => len,
+                        Err(err) => match err {
+                            Error::More(_) => data[offset..].len(),
+                            Error::Failed(len) => len,
+                        },
+                    };
+                    offset += len;
+                    insns += 1;
+                }
+                let th = block % self.threads;
+                debug!("predecode: send block({block}) at {address:#x} to thread {th}");
+                if tx[th].send((block, address, start, offset)).is_err() {
+                    break;
+                }
+                block += 1;
+            }
+            debug!("predecode: stop");
+
+            drop(tx);
+        });
+
         Ok(())
     }
 
@@ -123,7 +249,7 @@ impl<'a> App<'a> {
         let mut disasm = Disasm::new(self.arch, address, self.opts);
         let symbols = self.file.symbol_map();
         let info = Info { symbols: &symbols };
-        let res = disasm.print(&mut out, data, section_name, &info);
+        let res = disasm.print(&mut out, data, section_name, &info, true);
 
         // do not close stdout if BufWriter is used
         #[cfg(all(unix, feature = "block-buffering"))]
@@ -135,7 +261,8 @@ impl<'a> App<'a> {
                 }
                 Err(err) => {
                     let (err, out) = err.into_parts();
-                    out.into_inner().unwrap().into_raw_fd();
+                    let (out, _) = out.into_parts();
+                    out.into_raw_fd();
                     return Err(err);
                 }
             }
@@ -146,6 +273,8 @@ impl<'a> App<'a> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
+
     let cli = cli::parse_cli();
     let data = fs::read(&cli.path)?;
     let file = object::File::parse(&*data)?;
