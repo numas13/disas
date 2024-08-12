@@ -47,9 +47,9 @@ dependencies = [
 
 [[package]]
 name = "decodetree"
-version = "0.4.4"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55af32b1db051c93dff9bbabdf8acb3cc22f2a22d1cb19a23f7efdaba83b9e00"
+checksum = "e3ba10faf8af70e453fb15991bad2a77cf4e4a9e452ef573c04c3477309b760f"
 dependencies = [
  "nom",
  "nom_locate",
@@ -77,9 +77,9 @@ dependencies = [
 
 [[package]]
 name = "disasm"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e04d3549a8dbc66e505ac7cdf434d356912506d3e1457c1213b0034453693bf"
+checksum = "1822a711756311b53ce23bf1edf38c2c6d557d2920959f5d36f213a656eb8c6e"
 dependencies = [
  "decodetree",
 ]
