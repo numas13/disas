@@ -19,8 +19,10 @@ block-buffering = []
 parallel = []
 
 riscv = ["disasm/riscv"]
+x86 = ["disasm/x86"]
 all-arch = [
     "riscv",
+    "x86",
 ]
 
 [dependencies]

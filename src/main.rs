@@ -31,7 +31,7 @@ struct App<'a> {
 }
 
 impl<'a> App<'a> {
-    fn get_disasm_arch(file: &object::File) -> Arch {
+    fn get_disasm_arch(file: &object::File, cli: &Cli) -> Arch {
         use disasm::arch::*;
         use object::Architecture as A;
 
@@ -45,6 +45,25 @@ impl<'a> App<'a> {
                     riscv::Xlen::X32
                 },
             }),
+            #[cfg(feature = "x86")]
+            A::X86_64 => {
+                let mut opts = x86::Options {
+                    ext: x86::Extensions::all(),
+                    att: true,
+                    .. x86::Options::default()
+                };
+
+                for i in cli.disassembler_options.iter().rev() {
+                    match i.as_str() {
+                        "att" => opts.att = true,
+                        "intel" => opts.att = false,
+                        "suffix" => opts.suffix_always = true,
+                        _ => eprintln!("warning: unsupported option `{i}`"),
+                    }
+                }
+
+                Arch::X86(opts)
+            }
             _ => {
                 eprintln!("error: unsupported architecture");
                 process::exit(1);
@@ -74,6 +93,9 @@ impl<'a> App<'a> {
                 format.push_str(endianess);
                 format.push_str("riscv");
             }
+            A::X86_64 => {
+                format.push_str("x86-64");
+            }
             _ => todo!(),
         }
 
@@ -86,7 +108,7 @@ impl<'a> App<'a> {
             ..Options::default()
         };
 
-        let arch = Self::get_disasm_arch(file);
+        let arch = Self::get_disasm_arch(file, cli);
         let format = Self::get_file_format(file);
 
         println!();
