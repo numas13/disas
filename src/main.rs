@@ -19,6 +19,15 @@ impl PrinterInfo for Info<'_> {
     fn get_symbol(&self, address: u64) -> Option<(u64, &str)> {
         self.symbols.get(address).map(|s| (s.address(), s.name()))
     }
+
+    fn get_symbol_after(&self, address: u64) -> Option<(u64, &str)> {
+        let symbols = self.symbols.symbols();
+        let symbol = match symbols.binary_search_by_key(&address, |symbol| symbol.address()) {
+            Ok(index) => symbols.iter().skip(index).find(|i| i.address() != address),
+            Err(index) => symbols.get(index),
+        };
+        symbol.map(|s| (s.address(), s.name()))
+    }
 }
 
 struct App<'a> {
