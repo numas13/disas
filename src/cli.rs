@@ -1,3 +1,5 @@
+use std::cmp;
+
 use bpaf::*;
 
 #[allow(dead_code)]
@@ -5,10 +7,12 @@ use bpaf::*;
 pub struct Cli {
     pub disassemble: bool,
     pub disassemble_all: bool,
+    pub disassemble_zeroes: bool,
     pub disassemble_symbols: Vec<String>,
     pub sections: Vec<String>,
     pub disassembler_options: Vec<String>,
     pub threads: usize,
+    pub threads_block_size: usize,
     pub path: String,
 }
 
@@ -21,6 +25,11 @@ pub fn parse_cli() -> Cli {
     let disassemble_all = short('D')
         .long("disassemble-all")
         .help("Display assembler contents of all sections")
+        .switch();
+
+    let disassemble_zeroes = short('z')
+        .long("disassemble-zeroes")
+        .help("Do not skip blocks of zeroes when disassembling")
         .switch();
 
     let disassemble_symbols = long("disassemble-symbols")
@@ -71,7 +80,13 @@ pub fn parse_cli() -> Cli {
             0 => num_cpus,
             _ => i,
         })
-        .fallback(std::cmp::min(4, num_cpus));
+        .fallback(cmp::min(4, num_cpus));
+
+    let threads_block_size = long("threads-block-size")
+        .help("Set the number of bytes decoded per thread [default: 4096]")
+        .argument("BYTES")
+        .map(|i: usize| i.clamp(256, 1024 * 1024))
+        .fallback(4096);
 
     let path = positional("FILE")
         .help("File to process")
@@ -80,10 +95,12 @@ pub fn parse_cli() -> Cli {
     construct!(Cli {
         disassemble,
         disassemble_all,
+        disassemble_zeroes,
         disassemble_symbols,
         sections,
         disassembler_options,
         threads,
+        threads_block_size,
         path,
     })
     .to_options()

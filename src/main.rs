@@ -37,6 +37,7 @@ struct App<'a> {
     arch: Arch,
 
     threads: usize,
+    threads_block_size: usize,
 }
 
 impl<'a> App<'a> {
@@ -59,7 +60,7 @@ impl<'a> App<'a> {
                 let mut opts = x86::Options {
                     ext: x86::Extensions::all(),
                     att: true,
-                    .. x86::Options::default()
+                    ..x86::Options::default()
                 };
 
                 for i in cli.disassembler_options.iter().rev() {
@@ -114,6 +115,7 @@ impl<'a> App<'a> {
     fn new(cli: &'a Cli, file: &'a object::File<'a>) -> Self {
         let opts = Options {
             alias: !cli.disassembler_options.iter().any(|i| i == "no-aliases"),
+            decode_zeroes: cli.disassemble_zeroes,
             ..Options::default()
         };
 
@@ -129,6 +131,7 @@ impl<'a> App<'a> {
             opts,
             arch,
             threads: cli.threads,
+            threads_block_size: cli.threads_block_size,
         }
     }
 
@@ -157,100 +160,108 @@ impl<'a> App<'a> {
         data: &[u8],
         section_name: &str,
     ) -> Result<(), io::Error> {
-        use disasm::{Bundle, Error};
-        use std::{
-            io::Write,
-            sync::{mpsc, Arc, Condvar, Mutex},
-            thread,
-        };
+        use std::{io::Write, sync::mpsc, thread};
 
-        // how many instructions decoded per thread
-        let block_insns = 1024 * 16 / 4;
-        debug!("instructions per block {block_insns}");
+        enum Message {
+            Offset(usize),
+            Print,
+        }
+
+        let block_size = self.threads_block_size;
+        debug!("using ~{block_size} bytes per block");
 
         thread::scope(|s| {
             let mut tx = Vec::with_capacity(self.threads);
             let mut rx = Vec::with_capacity(self.threads);
 
             for _ in 0..self.threads {
-                let (t, r) = mpsc::sync_channel::<(usize, u64, usize, usize)>(4);
+                let (t, r) = mpsc::sync_channel::<Message>(2);
                 tx.push(t);
                 rx.push(r);
             }
 
-            let current = Arc::new((Mutex::new(0), Condvar::new()));
-            for (thread_id, rx) in rx.into_iter().enumerate() {
-                let current = current.clone();
+            let first = tx.remove(0);
+            // manually start first thread
+            first.send(Message::Offset(0)).unwrap();
+            first.send(Message::Print).unwrap();
+            tx.push(first);
+
+            for (id, (rx, tx)) in rx.into_iter().zip(tx).enumerate() {
                 s.spawn(move || {
-                    debug!("thread({thread_id}): start");
-                    let stdout = std::io::stdout();
+                    let mut dis = Disasm::new(self.arch, address, self.opts);
+                    let mut buffer = Vec::with_capacity(8 * 1024);
                     let symbols = self.file.symbol_map();
                     let info = Info { symbols: &symbols };
+                    let stdout = std::io::stdout();
 
-                    let mut disasm = Disasm::new(self.arch, 0, self.opts);
-                    let (current, condvar) = &*current;
+                    while let Ok(msg) = rx.recv() {
+                        match msg {
+                            Message::Offset(start) => {
+                                if start >= data.len() {
+                                    debug!("thread#{id}: end of code");
+                                    return Ok(());
+                                }
 
-                    let mut buffer = Vec::with_capacity(8192);
-                    while let Ok((block, address, start, end)) = rx.recv() {
-                        debug!("thread({thread_id}): disassemble block({block}) at {address:#x}, {} bytes", end - start);
-                        let data = &data[start..end];
-                        buffer.clear();
-                        let mut out = std::io::Cursor::new(&mut buffer);
-                        disasm.skip((address - disasm.address()) as usize);
-                        disasm.print(&mut out, data, section_name, &info, block == 0).unwrap();
+                                let skip = start - (dis.address() - address) as usize;
+                                dis.skip(skip);
+                                let block_address = dis.address();
 
-                        let lock = current.lock().unwrap();
-                        let mut lock = condvar.wait_while(lock, |cur| *cur != block).unwrap();
-                        let res = stdout.lock().write_all(&buffer);
-                        *lock += 1;
-                        condvar.notify_all();
+                                debug!("thread#{id}: {block_address:#x} offset {start}");
 
-                        if let Err(err) = res {
-                            if err.kind() == io::ErrorKind::BrokenPipe {
-                                break;
-                            } else {
-                                return Err(err);
+                                let tail = &data[start..];
+                                let mut size = block_size;
+                                let block;
+                                loop {
+                                    if size > tail.len() {
+                                        block = tail;
+                                        break;
+                                    }
+                                    let n = dis.decode_len(&tail[..size]);
+                                    if n != 0 {
+                                        block = &tail[..n];
+                                        break;
+                                    }
+                                    // decode_len found big block of zeroes
+                                    size = tail.iter()
+                                        .position(|i| *i != 0)
+                                        .unwrap_or(tail.len());
+                                    debug!("thread#{id}: {block_address:#x} found block of zeros, {size} bytes");
+                                    size += block_size;
+                                }
+                                let len = block.len();
+
+                                if tx.send(Message::Offset(start + len)).is_err() {
+                                    return Ok(());
+                                }
+
+                                debug!("thread#{id}: {block_address:#x} disassemble {len} bytes");
+
+                                buffer.clear();
+                                let mut out = std::io::Cursor::new(buffer);
+                                dis.print(&mut out, block, section_name, &info, start == 0)?;
+                                buffer = out.into_inner();
+                            }
+                            Message::Print => {
+                                let address = dis.address();
+                                let len = buffer.len();
+                                debug!("thread#{id}: {address:#x} print {len} bytes");
+                                if let Err(err) = stdout.lock().write_all(&buffer) {
+                                    if err.kind() == io::ErrorKind::BrokenPipe {
+                                        break;
+                                    } else {
+                                        return Err(err);
+                                    }
+                                }
+                                if tx.send(Message::Print).is_err() {
+                                    return Ok(());
+                                }
                             }
                         }
                     }
-                    debug!("thread({thread_id}): stop");
+
                     Ok(())
                 });
             }
-
-            let mut disasm = Disasm::new(self.arch, address, self.opts);
-            let min_len = disasm.insn_size_min();
-            let mut bundle = Bundle::empty();
-            let mut block = 0;
-            let mut offset = 0;
-            debug!("predecode: start");
-            while data[offset..].len() >= min_len {
-                let mut insns = 0;
-                let start = offset;
-                let address = disasm.address();
-                // TODO: disasm must provide some sort of lenght decoder with respect to
-                // tracking of previous instructions in backends.
-                while insns < block_insns && data[offset..].len() >= min_len {
-                    let len = match disasm.decode(&data[offset..], &mut bundle) {
-                        Ok(len) => len,
-                        Err(err) => match err {
-                            Error::More(_) => data[offset..].len(),
-                            Error::Failed(len) => len,
-                        },
-                    };
-                    offset += len;
-                    insns += 1;
-                }
-                let th = block % self.threads;
-                debug!("predecode: send block({block}) at {address:#x} to thread {th}");
-                if tx[th].send((block, address, start, offset)).is_err() {
-                    break;
-                }
-                block += 1;
-            }
-            debug!("predecode: stop");
-
-            drop(tx);
         });
 
         Ok(())

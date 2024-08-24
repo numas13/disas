@@ -79,9 +79,9 @@ dependencies = [
 
 [[package]]
 name = "disasm"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "009e58a018f0e3b4ba7a23b554bd21059c91c49ac3422fbef6a18f09dcc510d5"
+checksum = "32cb3f625b5b5984c661d70c23ca97d7dbc6374b1069268d571746866e0beecb"
 dependencies = [
  "decodetree",
 ]
