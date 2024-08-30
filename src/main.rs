@@ -56,12 +56,16 @@ impl<'a> App<'a> {
                 },
             }),
             #[cfg(feature = "x86")]
-            A::X86_64 => {
+            A::I386 | A::X86_64 => {
                 let mut opts = x86::Options {
                     ext: x86::Extensions::all(),
                     att: true,
                     ..x86::Options::default()
                 };
+
+                if file.architecture() == A::I386 {
+                    opts.ext.amd64 = false;
+                }
 
                 for i in cli.disassembler_options.iter().rev() {
                     match i.as_str() {
@@ -102,6 +106,9 @@ impl<'a> App<'a> {
                 };
                 format.push_str(endianess);
                 format.push_str("riscv");
+            }
+            A::I386 => {
+                format.push_str("i386");
             }
             A::X86_64 => {
                 format.push_str("x86-64");
