@@ -3,7 +3,12 @@ extern crate log;
 
 mod cli;
 
-use std::{error::Error, fs, io, process};
+use std::{
+    error::Error,
+    fs,
+    io::{self, Write},
+    process,
+};
 
 use disasm::{Arch, Disasm, Options, PrinterInfo};
 use object::{Object, ObjectSection, Section, SymbolMap, SymbolMapName};
@@ -144,8 +149,20 @@ impl<'a> App<'a> {
 
     fn disassemble_section(&self, section: Section) -> Result<(), Box<dyn Error>> {
         let section_name = section.name()?;
-        println!();
-        println!("Disassembly of section {section_name}:");
+
+        // ignore broken pipe error
+        fn helper(result: io::Result<()>) -> io::Result<()> {
+            if matches!(result, Err(ref e) if e.kind() == io::ErrorKind::BrokenPipe) {
+                Ok(())
+            } else {
+                result
+            }
+        }
+
+        helper({
+            let mut stdout = io::stdout().lock();
+            writeln!(stdout, "\nDisassembly of section {section_name}:")
+        })?;
 
         let data = section.data()?;
         let address = section.address();
@@ -155,8 +172,7 @@ impl<'a> App<'a> {
             self.disassemble_code_parallel(address, data, section_name)?;
             return Ok(());
         }
-        self.disassemble_code(address, data, section_name)?;
-
+        helper(self.disassemble_code(address, data, section_name))?;
         Ok(())
     }
 
