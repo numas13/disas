@@ -1,3 +1,4 @@
+#[cfg(feature = "parallel")]
 #[macro_use]
 extern crate log;
 
@@ -10,17 +11,25 @@ use std::{
     process,
 };
 
-use disasm::{Arch, Disasm, Options, PrinterInfo};
+use disasm::{Arch, Decoder, Options, PrinterExt};
 use object::{Object, ObjectSection, Section, SymbolMap, SymbolMapName};
 
-use crate::cli::Cli;
+#[cfg(feature = "color")]
+use std::fmt::{self, Display};
 
-#[derive(Copy, Clone)]
+#[cfg(feature = "color")]
+use disasm::Style;
+
+use crate::cli::{Cli, Color};
+
+#[derive(Clone)]
 struct Info<'a> {
-    symbols: &'a SymbolMap<SymbolMapName<'a>>,
+    #[cfg_attr(not(feature = "color"), allow(dead_code))]
+    color: Color,
+    symbols: SymbolMap<SymbolMapName<'a>>,
 }
 
-impl PrinterInfo for Info<'_> {
+impl PrinterExt for Info<'_> {
     fn get_symbol(&self, address: u64) -> Option<(u64, &str)> {
         self.symbols.get(address).map(|s| (s.address(), s.name()))
     }
@@ -33,6 +42,33 @@ impl PrinterInfo for Info<'_> {
         };
         symbol.map(|s| (s.address(), s.name()))
     }
+
+    #[cfg(feature = "color")]
+    fn print_styled(
+        &self,
+        fmt: &mut fmt::Formatter,
+        style: Style,
+        display: impl fmt::Display,
+    ) -> fmt::Result {
+        use owo_colors::OwoColorize;
+
+        match self.color {
+            Color::Off => display.fmt(fmt),
+            Color::On | Color::Extended => match style {
+                Style::Slot => display.fmt(fmt),
+                Style::Mnemonic => display.yellow().fmt(fmt),
+                Style::SubMnemonic => display.yellow().fmt(fmt),
+                Style::Register => display.blue().fmt(fmt),
+                Style::Immediate => display.magenta().fmt(fmt),
+                Style::Address => display.magenta().fmt(fmt),
+                Style::AddressOffset => display.magenta().fmt(fmt),
+                Style::Symbol => display.green().fmt(fmt),
+                Style::Comment => display.fmt(fmt),
+                Style::AssemblerDirective => display.fmt(fmt),
+            },
+            // TODO: Color::Extended
+        }
+    }
 }
 
 struct App<'a> {
@@ -41,7 +77,11 @@ struct App<'a> {
     opts: Options,
     arch: Arch,
 
+    color: Color,
+
+    #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
     threads: usize,
+    #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
     threads_block_size: usize,
 }
 
@@ -142,6 +182,7 @@ impl<'a> App<'a> {
             file,
             opts,
             arch,
+            color: cli.disassembler_color,
             threads: cli.threads,
             threads_block_size: cli.threads_block_size,
         }
@@ -211,10 +252,10 @@ impl<'a> App<'a> {
 
             for (id, (rx, tx)) in rx.into_iter().zip(tx).enumerate() {
                 s.spawn(move || {
-                    let mut dis = Disasm::new(self.arch, address, self.opts);
-                    let mut buffer = Vec::with_capacity(8 * 1024);
                     let symbols = self.file.symbol_map();
-                    let info = Info { symbols: &symbols };
+                    let info = Info { color: self.color, symbols };
+                    let mut dis = Decoder::new(self.arch, address, self.opts).printer(info, section_name);
+                    let mut buffer = Vec::with_capacity(8 * 1024);
                     let stdout = std::io::stdout();
 
                     while let Ok(msg) = rx.recv() {
@@ -225,7 +266,7 @@ impl<'a> App<'a> {
                                     return Ok(());
                                 }
 
-                                let skip = start - (dis.address() - address) as usize;
+                                let skip = start as u64 - (dis.address() - address);
                                 dis.skip(skip);
                                 let block_address = dis.address();
 
@@ -261,7 +302,7 @@ impl<'a> App<'a> {
 
                                 buffer.clear();
                                 let mut out = std::io::Cursor::new(buffer);
-                                dis.print(&mut out, block, section_name, &info, start == 0)?;
+                                dis.print(&mut out, block, start == 0)?;
                                 buffer = out.into_inner();
                             }
                             Message::Print => {
@@ -290,12 +331,7 @@ impl<'a> App<'a> {
         Ok(())
     }
 
-    fn disassemble_code(
-        &self,
-        address: u64,
-        data: &[u8],
-        section_name: &str,
-    ) -> Result<(), io::Error> {
+    fn disassemble_code(&self, address: u64, data: &[u8], section_name: &str) -> io::Result<()> {
         let stdout = std::io::stdout();
 
         #[allow(unused_mut)]
@@ -311,10 +347,14 @@ impl<'a> App<'a> {
             BufWriter::new(unsafe { File::from_raw_fd(out.as_raw_fd()) })
         };
 
-        let mut disasm = Disasm::new(self.arch, address, self.opts);
         let symbols = self.file.symbol_map();
-        let info = Info { symbols: &symbols };
-        let res = disasm.print(&mut out, data, section_name, &info, true);
+        let info = Info {
+            color: self.color,
+            symbols,
+        };
+        let res = Decoder::new(self.arch, address, self.opts)
+            .printer(info, section_name)
+            .print(&mut out, data, true);
 
         // do not close stdout if BufWriter is used
         #[cfg(all(unix, feature = "block-buffering"))]

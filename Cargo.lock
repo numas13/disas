@@ -15,7 +15,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3280efcf6d66bc77c2cf9b67dc8acee47a217d9be67dd590b3230dffe663724d"
 dependencies = [
  "owo-colors",
- "supports-color",
+ "supports-color 3.0.0",
 ]
 
 [[package]]
@@ -68,20 +68,22 @@ dependencies = [
 
 [[package]]
 name = "disas"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "bpaf",
  "disasm",
  "env_logger",
  "log",
  "object",
+ "owo-colors",
+ "supports-color 2.1.0",
 ]
 
 [[package]]
 name = "disasm"
-version = "0.3.5"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32cb3f625b5b5984c661d70c23ca97d7dbc6374b1069268d571746866e0beecb"
+checksum = "5ddca2253754e036add1073a3342aed4fe28e1ddb444e5c12dff589f637e3b1f"
 dependencies = [
  "decodetree",
 ]
@@ -242,6 +244,16 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "supports-color"
+version = "2.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6398cde53adc3c4557306a96ce67b302968513830a77a95b2b17305d9719a89"
+dependencies = [
+ "is-terminal",
+ "is_ci",
+]
 
 [[package]]
 name = "supports-color"

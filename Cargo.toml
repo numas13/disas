@@ -1,7 +1,7 @@
 [package]
 name = "disas"
 description = "Disassembler"
-version = "0.1.1"
+version = "0.1.2"
 license = "GPL-3.0-only"
 keywords = ["disassembler"]
 authors = ["Denis Drakhnia <numas13@gmail.com>"]
@@ -14,9 +14,10 @@ default-target = "x86_64-unknown-linux-gnu"
 targets = ["x86_64-unknown-linux-gnu"]
 
 [features]
-default = ["all-arch", "block-buffering", "parallel"]
+default = ["all-arch", "block-buffering", "parallel", "color"]
 block-buffering = []
-parallel = []
+parallel = ["dep:log"]
+color = ["dep:owo-colors", "dep:supports-color"]
 
 riscv = ["disasm/riscv"]
 x86 = ["disasm/x86"]
@@ -27,9 +28,11 @@ all-arch = [
 
 [dependencies]
 object = "0.34"
-disasm = { version = "0.3.5", features = ["std", "print"] }
+disasm = { version = "0.4.0", default-features = false, features = ["print"] }
 bpaf = { version = "0.9", features = ["autocomplete", "dull-color"] }
-log = "0.4.22"
+log = { version = "0.4.22", optional = true }
+owo-colors = { version = "4", optional = true }
+supports-color = { version = "2", optional = true }
 
 [dependencies.env_logger]
 version = "0.10.2"

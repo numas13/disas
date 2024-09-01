@@ -2,6 +2,13 @@ use std::cmp;
 
 use bpaf::*;
 
+#[derive(Copy, Clone, Debug)]
+pub enum Color {
+    Off,
+    On,
+    Extended,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct Cli {
@@ -11,6 +18,7 @@ pub struct Cli {
     pub disassemble_symbols: Vec<String>,
     pub sections: Vec<String>,
     pub disassembler_options: Vec<String>,
+    pub disassembler_color: Color,
     pub threads: usize,
     pub threads_block_size: usize,
     pub path: String,
@@ -57,6 +65,27 @@ pub fn parse_cli() -> Cli {
         })
         .fallback(Vec::new());
 
+    #[cfg(feature = "color")]
+    let auto_color =
+        supports_color::on(supports_color::Stream::Stdout).map_or(Color::Off, |_| Color::On);
+
+    #[cfg(not(feature = "color"))]
+    let auto_color = Color::Off;
+
+    let disassembler_color = long("disassembler-color")
+        .help("Enable or disable disassembler color output [default: auto, valid modes: off, on, auto, terminal, extended]")
+        .argument::<String>("MODE")
+        .parse(move |s| {
+            match s.as_str() {
+                "off" => Ok(Color::Off),
+                "on" => Ok(Color::On),
+                "auto" | "terminal" => Ok(auto_color),
+                "extended" => Ok(Color::Extended),
+                _ => Err(format!("invalid color {s}")),
+            }
+        })
+        .fallback(auto_color);
+
     let sections = short('j')
         .long("section")
         .help("Only display information for section NAME")
@@ -99,6 +128,7 @@ pub fn parse_cli() -> Cli {
         disassemble_symbols,
         sections,
         disassembler_options,
+        disassembler_color,
         threads,
         threads_block_size,
         path,
