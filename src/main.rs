@@ -251,26 +251,30 @@ impl<'a> App<'a> {
             tx.push(first);
 
             for (id, (rx, tx)) in rx.into_iter().zip(tx).enumerate() {
+                let name = format!("thread#{id}");
                 s.spawn(move || {
                     let symbols = self.file.symbol_map();
                     let info = Info { color: self.color, symbols };
                     let mut dis = Decoder::new(self.arch, address, self.opts).printer(info, section_name);
                     let mut buffer = Vec::with_capacity(8 * 1024);
+                    let mut block_address = 0;
+                    let mut block_len = 0;
+                    let mut decoded = 0;
                     let stdout = std::io::stdout();
 
                     while let Ok(msg) = rx.recv() {
                         match msg {
                             Message::Offset(start) => {
                                 if start >= data.len() {
-                                    debug!("thread#{id}: end of code");
+                                    debug!("{name}: end of code");
                                     return Ok(());
                                 }
 
                                 let skip = start as u64 - (dis.address() - address);
                                 dis.skip(skip);
-                                let block_address = dis.address();
+                                block_address = dis.address();
 
-                                debug!("thread#{id}: {block_address:#x} offset {start}");
+                                debug!("{name}: {block_address:#x} offset {start:#x}");
 
                                 let tail = &data[start..];
                                 let mut size = block_size;
@@ -289,26 +293,25 @@ impl<'a> App<'a> {
                                     size = tail.iter()
                                         .position(|i| *i != 0)
                                         .unwrap_or(tail.len());
-                                    debug!("thread#{id}: {block_address:#x} found block of zeros, {size} bytes");
+                                    debug!("{name}: {block_address:#x} found block of zeros, {size} bytes");
                                     size += block_size;
                                 }
-                                let len = block.len();
+                                block_len = block.len();
 
-                                if tx.send(Message::Offset(start + len)).is_err() {
+                                if tx.send(Message::Offset(start + block_len)).is_err() {
                                     return Ok(());
                                 }
 
-                                debug!("thread#{id}: {block_address:#x} disassemble {len} bytes");
+                                debug!("{name}: {block_address:#x} disassemble {block_len} bytes");
 
                                 buffer.clear();
-                                let mut out = std::io::Cursor::new(buffer);
+                                let mut out = std::io::Cursor::new(&mut buffer);
                                 dis.print(&mut out, block, start == 0)?;
-                                buffer = out.into_inner();
+                                decoded = (dis.address() - block_address) as usize;
                             }
                             Message::Print => {
-                                let address = dis.address();
-                                let len = buffer.len();
-                                debug!("thread#{id}: {address:#x} print {len} bytes");
+                                debug!("{name}: {block_address:#x} print {} bytes", buffer.len());
+
                                 if let Err(err) = stdout.lock().write_all(&buffer) {
                                     if err.kind() == io::ErrorKind::BrokenPipe {
                                         break;
@@ -316,6 +319,14 @@ impl<'a> App<'a> {
                                         return Err(err);
                                     }
                                 }
+
+                                if decoded != block_len {
+                                    stdout.lock().flush()?;
+                                    let end = dis.address();
+                                    error!("{name}: {block_address:#x}:{end:#x} decoded {decoded} bytes, expect {block_len} bytes");
+                                    return Ok(());
+                                }
+
                                 if tx.send(Message::Print).is_err() {
                                     return Ok(());
                                 }
