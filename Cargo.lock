@@ -81,11 +81,48 @@ dependencies = [
 
 [[package]]
 name = "disasm"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ddca2253754e036add1073a3342aed4fe28e1ddb444e5c12dff589f637e3b1f"
+checksum = "a78f9d446577a439c07eb18e9c337dae59bdf6b242da30e681589b2f5bc706a6"
+dependencies = [
+ "disasm-core",
+ "disasm-riscv",
+ "disasm-x86",
+]
+
+[[package]]
+name = "disasm-core"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b4bd28125c606f277a9981aee994b609ce0587413f924ac92aa151c8eabaaca"
+
+[[package]]
+name = "disasm-gen"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66546f2e8e92a8abcc7cc65a04afd73244b1107b0fe7fe84437a8d841fa1bb2a"
 dependencies = [
  "decodetree",
+]
+
+[[package]]
+name = "disasm-riscv"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "845ac30e9e4b89bc8f1cce30fee4452d3edf476e010c119c66deeaf4844bfe05"
+dependencies = [
+ "disasm-core",
+ "disasm-gen",
+]
+
+[[package]]
+name = "disasm-x86"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d26dec7cc097fb44fbcdd3ae701c244a201ea6b47f96334732eb32605d05a4d"
+dependencies = [
+ "disasm-core",
+ "disasm-gen",
 ]
 
 [[package]]

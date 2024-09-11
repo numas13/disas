@@ -101,15 +101,23 @@ impl<'a> App<'a> {
                 },
             }),
             #[cfg(feature = "x86")]
-            A::I386 | A::X86_64 => {
+            A::I386 | A::X86_64 | A::X86_64_X32 => {
+                use x86::AddrSize;
+
                 let mut opts = x86::Options {
                     ext: x86::Extensions::all(),
                     att: true,
                     ..x86::Options::default()
                 };
 
-                if file.architecture() == A::I386 {
-                    opts.ext.amd64 = false;
+                match file.architecture() {
+                    A::I386 => {
+                        opts.ext.amd64 = false;
+                    }
+                    A::X86_64_X32 => {
+                        opts.addr_size = AddrSize::Addr32;
+                    }
+                    _ => {}
                 }
 
                 for i in cli.disassembler_options.iter().rev() {
@@ -117,6 +125,8 @@ impl<'a> App<'a> {
                         "att" => opts.att = true,
                         "intel" => opts.att = false,
                         "suffix" => opts.suffix_always = true,
+                        "addr32" => opts.addr_size = AddrSize::Addr32,
+                        "addr64" => opts.addr_size = AddrSize::Addr64,
                         _ => eprintln!("warning: unsupported option `{i}`"),
                     }
                 }
@@ -155,7 +165,7 @@ impl<'a> App<'a> {
             A::I386 => {
                 format.push_str("i386");
             }
-            A::X86_64 => {
+            A::X86_64 | A::X86_64_X32 => {
                 format.push_str("x86-64");
             }
             _ => todo!(),
