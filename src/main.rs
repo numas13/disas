@@ -138,7 +138,7 @@ impl<'a> App<'a> {
         match file {
             File::Elf32(..) => format.push_str("elf32"),
             File::Elf64(..) => format.push_str("elf64"),
-            _ => todo!(),
+            _ => format.push_str("unknown"),
         }
 
         format.push('-');
