@@ -16,21 +16,23 @@ targets = ["x86_64-unknown-linux-gnu"]
 [features]
 default = ["all-arch", "block-buffering", "parallel", "color"]
 block-buffering = []
-parallel = ["dep:log"]
+parallel = []
 color = ["dep:owo-colors", "dep:supports-color"]
 
+e2k = ["disasm/e2k"]
 riscv = ["disasm/riscv"]
 x86 = ["disasm/x86"]
 all-arch = [
+    "e2k",
     "riscv",
     "x86",
 ]
 
 [dependencies]
-object = "0.34"
+object = "0.36"
 disasm = { version = "0.5.0", default-features = false, features = ["print"] }
 bpaf = { version = "0.9", features = ["autocomplete", "dull-color"] }
-log = { version = "0.4.22", optional = true }
+log = { version = "0.4.22" }
 owo-colors = { version = "4", optional = true }
 supports-color = { version = "2", optional = true }
 
@@ -38,3 +40,6 @@ supports-color = { version = "2", optional = true }
 version = "0.10.2"
 default-features = false
 features = ["auto-color", "humantime"]
+
+[patch.crates-io]
+object = { git = "https://github.com/gimli-rs/object.git" }

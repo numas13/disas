@@ -1,4 +1,3 @@
-#[cfg(feature = "parallel")]
 #[macro_use]
 extern crate log;
 
@@ -21,6 +20,11 @@ use std::fmt::{self, Display};
 use disasm::Style;
 
 use crate::cli::{Cli, Color};
+
+fn unsupported_arch() -> ! {
+    eprintln!("error: unsupported architecture");
+    process::exit(1);
+}
 
 #[derive(Clone)]
 struct Info<'a> {
@@ -91,6 +95,41 @@ impl<'a> App<'a> {
         use object::Architecture as A;
 
         match file.architecture() {
+            #[cfg(feature = "e2k")]
+            A::E2K32 | A::E2K64 => {
+                use object::FileFlags;
+
+                let mut opts = e2k::Options::default();
+                if let FileFlags::Elf { e_flags, .. } = file.flags() {
+                    use object::elf;
+
+                    opts.isa = match elf::ef_e2k_flag_to_mach(e_flags) {
+                        elf::E_E2K_MACH_BASE => 2,
+                        elf::E_E2K_MACH_EV1 => 1,
+                        elf::E_E2K_MACH_EV2 => 2,
+                        elf::E_E2K_MACH_EV3 => 3,
+                        elf::E_E2K_MACH_EV4 => 4,
+                        elf::E_E2K_MACH_EV5 => 5,
+                        elf::E_E2K_MACH_EV6 => 6,
+                        elf::E_E2K_MACH_EV7 => 7,
+
+                        elf::E_E2K_MACH_8C => 4,
+                        elf::E_E2K_MACH_1CPLUS => 4,
+                        elf::E_E2K_MACH_12C => 6,
+                        elf::E_E2K_MACH_16C => 6,
+                        elf::E_E2K_MACH_2C3 => 6,
+                        elf::E_E2K_MACH_48C => 7,
+                        elf::E_E2K_MACH_8V7 => 7,
+
+                        mach => {
+                            debug!("e2k: unexpected e_flags.mach={mach}");
+                            opts.isa
+                        }
+                    };
+                }
+                Arch::E2K(opts)
+            }
+
             #[cfg(feature = "riscv")]
             A::Riscv32 | A::Riscv64 => Arch::Riscv(riscv::Options {
                 ext: riscv::Extensions::all(),
@@ -100,6 +139,7 @@ impl<'a> App<'a> {
                     riscv::Xlen::X32
                 },
             }),
+
             #[cfg(feature = "x86")]
             A::I386 | A::X86_64 | A::X86_64_X32 => {
                 use x86::AddrSize;
@@ -133,10 +173,7 @@ impl<'a> App<'a> {
 
                 Arch::X86(opts)
             }
-            _ => {
-                eprintln!("error: unsupported architecture");
-                process::exit(1);
-            }
+            _ => unsupported_arch(),
         }
     }
 
@@ -154,6 +191,15 @@ impl<'a> App<'a> {
         format.push('-');
 
         match file.architecture() {
+            A::E2K32 | A::E2K64 => {
+                format.push_str("e2k");
+
+                if let object::FileFlags::Elf { e_flags, .. } = file.flags() {
+                    if e_flags & object::elf::EF_E2K_PM != 0 {
+                        format.push_str("-pm");
+                    }
+                }
+            }
             A::Riscv32 | A::Riscv64 => {
                 let endianess = match file.endianness() {
                     E::Little => "little",
