@@ -29,7 +29,7 @@ all-arch = [
 ]
 
 [dependencies]
-object = "0.36"
+object = "0.36.5"
 disasm = { version = "0.5.0", default-features = false, features = ["print"] }
 bpaf = { version = "0.9", features = ["autocomplete", "dull-color"] }
 log = { version = "0.4.22" }
@@ -40,6 +40,3 @@ supports-color = { version = "2", optional = true }
 version = "0.10.2"
 default-features = false
 features = ["auto-color", "humantime"]
-
-[patch.crates-io]
-object = { git = "https://github.com/gimli-rs/object.git" }
