@@ -429,12 +429,12 @@ impl<'a> App<'a> {
             use std::os::fd::IntoRawFd;
             match out.into_inner() {
                 Ok(out) => {
-                    out.into_raw_fd();
+                    let _ = out.into_raw_fd();
                 }
                 Err(err) => {
                     let (err, out) = err.into_parts();
                     let (out, _) = out.into_parts();
-                    out.into_raw_fd();
+                    let _ = out.into_raw_fd();
                     return Err(err);
                 }
             }
