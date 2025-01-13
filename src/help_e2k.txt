@@ -1,0 +1,2 @@
+    dst_first                 Outputs destination as first operand
+    dst_last                  Outputs destination as last operand

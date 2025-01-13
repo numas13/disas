@@ -127,6 +127,20 @@ impl<'a> App<'a> {
                         }
                     };
                 }
+
+                for i in cli.disassembler_options.iter().rev() {
+                    match i.as_str() {
+                        "help" => {
+                            println!("Available options:");
+                            print!("{}", include_str!("help_e2k.txt"));
+                            process::exit(0);
+                        }
+                        "dst_first" => opts.dst_first = true,
+                        "dst_last" => opts.dst_first = false,
+                        _ => eprintln!("warning: unsupported option `{i}`"),
+                    }
+                }
+
                 Arch::E2K(opts)
             }
 
