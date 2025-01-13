@@ -34,7 +34,7 @@ disasm = { version = "0.5.0", default-features = false, features = ["print"] }
 bpaf = { version = "0.9", features = ["autocomplete", "dull-color"] }
 log = { version = "0.4.22" }
 owo-colors = { version = "4", optional = true }
-supports-color = { version = "2", optional = true }
+supports-color = { version = "3", optional = true }
 
 [dependencies.env_logger]
 version = "0.10.2"
