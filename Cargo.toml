@@ -7,7 +7,7 @@ keywords = ["disassembler"]
 authors = ["Denis Drakhnia <numas13@gmail.com>"]
 repository = "https://github.com/numas13/disas"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.74"
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"

@@ -280,7 +280,7 @@ impl<'a> App<'a> {
         data: &[u8],
         section_name: &str,
     ) -> Result<(), io::Error> {
-        use std::{io::Write, sync::mpsc, thread};
+        use std::{sync::mpsc, thread};
 
         enum Message {
             Offset(usize),
