@@ -30,7 +30,7 @@ all-arch = [
 
 [dependencies]
 object = "0.36.5"
-disasm = { version = "0.5.0", default-features = false, features = ["print"] }
+disasm = { version = "0.5.1", default-features = false, features = ["print"] }
 bpaf = { version = "0.9", features = ["autocomplete", "dull-color"] }
 log = { version = "0.4.22" }
 owo-colors = { version = "4", optional = true }

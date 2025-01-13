@@ -64,9 +64,9 @@ dependencies = [
 
 [[package]]
 name = "disasm"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a78f9d446577a439c07eb18e9c337dae59bdf6b242da30e681589b2f5bc706a6"
+checksum = "4241a770ff1a84eadd79e6fe649606650413b9fabbe5a81725f5398ea6a5d93c"
 dependencies = [
  "disasm-core",
  "disasm-e2k",
@@ -76,15 +76,15 @@ dependencies = [
 
 [[package]]
 name = "disasm-core"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b4bd28125c606f277a9981aee994b609ce0587413f924ac92aa151c8eabaaca"
+checksum = "c2c4322d67993d298d516be847a7d252e2c0207a443ac9b11267150b97d57135"
 
 [[package]]
 name = "disasm-e2k"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c810b687d89d9a17b5c0aeac5e18be92898af4865a9930ec929a7274e1815f7"
+checksum = "8d75e95d198768509dd9716d4d5afb13f71a7fd9b6248f496d10b2390bf7e5b9"
 dependencies = [
  "disasm-core",
  "disasm-gen",
@@ -92,18 +92,18 @@ dependencies = [
 
 [[package]]
 name = "disasm-gen"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66546f2e8e92a8abcc7cc65a04afd73244b1107b0fe7fe84437a8d841fa1bb2a"
+checksum = "5432c2353b6449b5b4a4d015da73a278ca533e958aef2ae2f70f4e2062e05bf0"
 dependencies = [
  "decodetree",
 ]
 
 [[package]]
 name = "disasm-riscv"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "845ac30e9e4b89bc8f1cce30fee4452d3edf476e010c119c66deeaf4844bfe05"
+checksum = "3ca136e2f1a37e94d02d5a315710d167f5b15e77262664073d8c27e61aadb64f"
 dependencies = [
  "disasm-core",
  "disasm-gen",
@@ -111,9 +111,9 @@ dependencies = [
 
 [[package]]
 name = "disasm-x86"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d26dec7cc097fb44fbcdd3ae701c244a201ea6b47f96334732eb32605d05a4d"
+checksum = "536907551abeb41d7a741af0e50d65f441b3b39f89024bb769cebc164d25e59b"
 dependencies = [
  "disasm-core",
  "disasm-gen",
