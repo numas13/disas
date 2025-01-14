@@ -82,9 +82,9 @@ checksum = "c2c4322d67993d298d516be847a7d252e2c0207a443ac9b11267150b97d57135"
 
 [[package]]
 name = "disasm-e2k"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d75e95d198768509dd9716d4d5afb13f71a7fd9b6248f496d10b2390bf7e5b9"
+checksum = "28c8a05bfa49e1beab25c87db9d7b154c79042f2768f2f923f3c64739f892ac8"
 dependencies = [
  "disasm-core",
  "disasm-gen",
