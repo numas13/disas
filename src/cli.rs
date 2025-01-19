@@ -1,4 +1,4 @@
-use std::{cmp, num::ParseIntError};
+use std::{cmp, fmt, num::ParseIntError, str::FromStr};
 
 use bpaf::*;
 
@@ -7,6 +7,49 @@ pub enum Color {
     Off,
     On,
     Extended,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Demangle {
+    None,
+    Auto,
+    Gnuv3,
+    Java,
+    Gnat,
+    Dlang,
+    Rust,
+}
+
+impl fmt::Display for Demangle {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            Demangle::None => "none",
+            Demangle::Auto => "auto",
+            Demangle::Gnuv3 => "gnu-v3",
+            Demangle::Java => "java",
+            Demangle::Gnat => "gnat",
+            Demangle::Dlang => "dlang",
+            Demangle::Rust => "rust",
+        };
+        fmt.write_str(s)
+    }
+}
+
+impl FromStr for Demangle {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(Demangle::None),
+            "auto" => Ok(Demangle::Auto),
+            "gnu-v3" => Ok(Demangle::Gnuv3),
+            "java" => Ok(Demangle::Java),
+            "gnat" => Ok(Demangle::Gnat),
+            "dlang" => Ok(Demangle::Dlang),
+            "rust" => Ok(Demangle::Rust),
+            _ => Err("invalid demangle style"),
+        }
+    }
 }
 
 #[allow(dead_code)]
@@ -19,6 +62,8 @@ pub struct Cli {
     pub sections: Vec<String>,
     pub disassembler_options: Vec<String>,
     pub disassembler_color: Color,
+    pub source: bool,
+    pub demangle: Demangle,
     pub start_address: u64,
     pub stop_address: u64,
     pub threads: usize,
@@ -96,6 +141,25 @@ pub fn parse_cli() -> Cli {
         })
         .fallback(auto_color);
 
+    let source = short('S')
+        .long("source")
+        .help("Intermix source code with disassembly")
+        .switch()
+        .hide();
+
+    let demangle_flag = short('C')
+        .long("demangle")
+        .switch()
+        .hide()
+        .map(|_| Demangle::Auto);
+    let demangle_arg = short('C')
+        .long("demangle")
+        .help("Decode mangled/processed symbol names [default: auto]")
+        .argument::<Demangle>("STYLE");
+    let demangle = construct!([demangle_arg, demangle_flag])
+        .last()
+        .fallback(Demangle::Auto);
+
     let sections = short('j')
         .long("section")
         .help("Only display information for section NAME")
@@ -153,6 +217,8 @@ pub fn parse_cli() -> Cli {
         stop_address,
         disassembler_options,
         disassembler_color,
+        source,
+        demangle,
         threads,
         threads_block_size,
         path,
