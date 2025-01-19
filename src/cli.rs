@@ -1,4 +1,4 @@
-use std::cmp;
+use std::{cmp, num::ParseIntError};
 
 use bpaf::*;
 
@@ -19,9 +19,19 @@ pub struct Cli {
     pub sections: Vec<String>,
     pub disassembler_options: Vec<String>,
     pub disassembler_color: Color,
+    pub start_address: u64,
+    pub stop_address: u64,
     pub threads: usize,
     pub threads_block_size: usize,
     pub path: String,
+}
+
+fn parse_address(s: &str) -> Result<u64, ParseIntError> {
+    if s.starts_with("0x") || s.starts_with("0X") {
+        u64::from_str_radix(&s[2..], 16)
+    } else {
+        s.parse()
+    }
 }
 
 pub fn parse_cli() -> Cli {
@@ -92,6 +102,18 @@ pub fn parse_cli() -> Cli {
         .argument("NAME")
         .many();
 
+    let start_address = long("start-address")
+        .help("Only process data whose address is >= ADDR")
+        .argument::<String>("ADDR")
+        .parse(move |s| parse_address(&s))
+        .fallback(0);
+
+    let stop_address = long("stop-address")
+        .help("Only process data whose address is < ADDR")
+        .argument::<String>("ADDR")
+        .parse(move |s| parse_address(&s))
+        .fallback(u64::MAX);
+
     let num_cpus = std::thread::available_parallelism()
         .map(|i| i.get())
         .unwrap_or(1);
@@ -127,6 +149,8 @@ pub fn parse_cli() -> Cli {
         disassemble_zeroes,
         disassemble_symbols,
         sections,
+        start_address,
+        stop_address,
         disassembler_options,
         disassembler_color,
         threads,

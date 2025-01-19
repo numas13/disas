@@ -83,6 +83,9 @@ struct App<'a> {
 
     color: Color,
 
+    start_address: u64,
+    stop_address: u64,
+
     #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
     threads: usize,
     #[cfg_attr(not(feature = "parallel"), allow(dead_code))]
@@ -253,6 +256,8 @@ impl<'a> App<'a> {
             opts,
             arch,
             color: cli.disassembler_color,
+            start_address: cli.start_address,
+            stop_address: cli.stop_address,
             threads: cli.threads,
             threads_block_size: cli.threads_block_size,
         }
@@ -270,20 +275,34 @@ impl<'a> App<'a> {
             }
         }
 
+        let mut data = section.data()?;
+        let mut start_address = section.address();
+        let stop_address = start_address + data.len() as u64;
+
+        if start_address >= self.stop_address || stop_address <= self.start_address {
+            return Ok(());
+        }
+
+        if self.stop_address < stop_address {
+            data = &data[..(self.stop_address - start_address) as usize];
+        }
+
+        if start_address < self.start_address {
+            data = &data[(self.start_address - start_address) as usize..];
+            start_address = self.start_address;
+        }
+
         helper({
             let mut stdout = io::stdout().lock();
             writeln!(stdout, "\nDisassembly of section {section_name}:")
         })?;
 
-        let data = section.data()?;
-        let address = section.address();
-
         #[cfg(feature = "parallel")]
         if self.threads > 1 && data.len() >= 1024 * 64 {
-            self.disassemble_code_parallel(address, data, section_name)?;
+            self.disassemble_code_parallel(start_address, data, section_name)?;
             return Ok(());
         }
-        helper(self.disassemble_code(address, data, section_name))?;
+        helper(self.disassemble_code(start_address, data, section_name))?;
         Ok(())
     }
 
