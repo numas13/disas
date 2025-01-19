@@ -1,6 +1,6 @@
 use std::{cmp, fmt, num::ParseIntError, str::FromStr};
 
-use bpaf::*;
+use bpaf::{*, doc::Style};
 
 #[derive(Copy, Clone, Debug)]
 pub enum Color {
@@ -62,6 +62,7 @@ pub struct Cli {
     pub sections: Vec<String>,
     pub disassembler_options: Vec<String>,
     pub disassembler_color: Color,
+    pub show_raw_insn: bool,
     pub source: bool,
     pub demangle: Demangle,
     pub start_address: u64,
@@ -141,6 +142,19 @@ pub fn parse_cli() -> Cli {
         })
         .fallback(auto_color);
 
+    let show_raw_insn = long("show-raw-insn")
+        .help("Display hex alongside symbolic disassembly")
+        .switch()
+        .map(|_| true);
+    let no_show_raw_insn = long("no-show-raw-insn")
+        .switch()
+        .hide_usage()
+        .map(|_| false);
+    let show_raw_insn = construct!([show_raw_insn, no_show_raw_insn])
+        .custom_usage(&[("--[no-]show-raw-insn", Style::Literal)])
+        .fallback(true)
+        .last();
+
     let source = short('S')
         .long("source")
         .help("Intermix source code with disassembly")
@@ -217,6 +231,7 @@ pub fn parse_cli() -> Cli {
         stop_address,
         disassembler_options,
         disassembler_color,
+        show_raw_insn,
         source,
         demangle,
         threads,
@@ -224,6 +239,7 @@ pub fn parse_cli() -> Cli {
         path,
     })
     .to_options()
+    .version(env!("CARGO_PKG_VERSION"))
     .descr("This is a description")
     .fallback_to_usage()
     .run()

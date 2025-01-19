@@ -241,6 +241,7 @@ impl<'a> App<'a> {
         let opts = Options {
             alias: !cli.disassembler_options.iter().any(|i| i == "no-aliases"),
             decode_zeroes: cli.disassemble_zeroes,
+            // TODO: show_raw_insn: cli.show_raw_insn,
             ..Options::default()
         };
 
