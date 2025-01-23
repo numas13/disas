@@ -1,6 +1,6 @@
 use std::{cmp, fmt, num::ParseIntError, str::FromStr};
 
-use bpaf::{*, doc::Style};
+use bpaf::{doc::Style, *};
 
 #[derive(Copy, Clone, Debug)]
 pub enum Color {

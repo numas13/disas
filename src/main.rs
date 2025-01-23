@@ -8,6 +8,7 @@ use std::{
     fs,
     io::{self, Write},
     process,
+    sync::Arc,
 };
 
 use disasm::{Arch, Decoder, Options, PrinterExt};
@@ -30,7 +31,7 @@ fn unsupported_arch() -> ! {
 struct Info<'a> {
     #[cfg_attr(not(feature = "color"), allow(dead_code))]
     color: Color,
-    symbols: SymbolMap<SymbolMapName<'a>>,
+    symbols: Arc<SymbolMap<SymbolMapName<'a>>>,
 }
 
 impl PrinterExt for Info<'_> {
@@ -264,6 +265,13 @@ impl<'a> App<'a> {
         }
     }
 
+    fn create_info(&self) -> Info {
+        Info {
+            color: self.color,
+            symbols: Arc::new(self.file.symbol_map()),
+        }
+    }
+
     fn disassemble_section(&self, section: Section) -> Result<(), Box<dyn Error>> {
         let section_name = section.name()?;
 
@@ -340,11 +348,11 @@ impl<'a> App<'a> {
             first.send(Message::Print).unwrap();
             tx.push(first);
 
+            let info = self.create_info();
             for (id, (rx, tx)) in rx.into_iter().zip(tx).enumerate() {
+                let info = info.clone();
                 let name = format!("thread#{id}");
                 s.spawn(move || {
-                    let symbols = self.file.symbol_map();
-                    let info = Info { color: self.color, symbols };
                     let mut dis = Decoder::new(self.arch, address, self.opts).printer(info, section_name);
                     let mut buffer = Vec::with_capacity(8 * 1024);
                     let mut block_address = 0;
@@ -448,11 +456,7 @@ impl<'a> App<'a> {
             BufWriter::new(unsafe { File::from_raw_fd(out.as_raw_fd()) })
         };
 
-        let symbols = self.file.symbol_map();
-        let info = Info {
-            color: self.color,
-            symbols,
-        };
+        let info = self.create_info();
         let res = Decoder::new(self.arch, address, self.opts)
             .printer(info, section_name)
             .print(&mut out, data, true);
