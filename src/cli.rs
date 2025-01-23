@@ -112,8 +112,10 @@ pub fn parse_cli() -> Cli {
         .long("disassembler-options")
         .help("Pass text OPT on to the disassembler")
         .argument::<String>("OPT")
-        .map(|s| {
-            s.split(',')
+        .many()
+        .map(|v| {
+            v.join(",")
+                .split(',')
                 .map(|i| i.trim())
                 .filter(|i| !i.is_empty())
                 .map(|i| i.into())
