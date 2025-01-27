@@ -3,6 +3,9 @@ extern crate log;
 
 mod cli;
 
+#[cfg(feature = "parallel")]
+mod parallel;
+
 use std::{
     error::Error,
     fs,
@@ -272,6 +275,10 @@ impl<'a> App<'a> {
         }
     }
 
+    fn create_decoder(&self, address: u64) -> Decoder {
+        Decoder::new(self.arch, address, self.opts)
+    }
+
     fn disassemble_section(&self, section: Section) -> Result<(), Box<dyn Error>> {
         let section_name = section.name()?;
 
@@ -308,135 +315,10 @@ impl<'a> App<'a> {
 
         #[cfg(feature = "parallel")]
         if self.threads > 1 && data.len() >= 1024 * 64 {
-            self.disassemble_code_parallel(start_address, data, section_name)?;
+            parallel::disassemble_code(self, start_address, data, section_name)?;
             return Ok(());
         }
         helper(self.disassemble_code(start_address, data, section_name))?;
-        Ok(())
-    }
-
-    #[cfg(feature = "parallel")]
-    fn disassemble_code_parallel(
-        &self,
-        address: u64,
-        data: &[u8],
-        section_name: &str,
-    ) -> Result<(), io::Error> {
-        use std::{sync::mpsc, thread};
-
-        enum Message {
-            Offset(usize),
-            Print,
-        }
-
-        let block_size = self.threads_block_size;
-        debug!("using ~{block_size} bytes per block");
-
-        thread::scope(|s| {
-            let mut tx = Vec::with_capacity(self.threads);
-            let mut rx = Vec::with_capacity(self.threads);
-
-            for _ in 0..self.threads {
-                let (t, r) = mpsc::sync_channel::<Message>(2);
-                tx.push(t);
-                rx.push(r);
-            }
-
-            let first = tx.remove(0);
-            // manually start first thread
-            first.send(Message::Offset(0)).unwrap();
-            first.send(Message::Print).unwrap();
-            tx.push(first);
-
-            let info = self.create_info();
-            for (id, (rx, tx)) in rx.into_iter().zip(tx).enumerate() {
-                let info = info.clone();
-                let name = format!("thread#{id}");
-                s.spawn(move || {
-                    let mut dis = Decoder::new(self.arch, address, self.opts).printer(info, section_name);
-                    let mut buffer = Vec::with_capacity(8 * 1024);
-                    let mut block_address = 0;
-                    let mut block_len = 0;
-                    let mut decoded = 0;
-                    let stdout = std::io::stdout();
-
-                    while let Ok(msg) = rx.recv() {
-                        match msg {
-                            Message::Offset(start) => {
-                                if start >= data.len() {
-                                    debug!("{name}: end of code");
-                                    return Ok(());
-                                }
-
-                                let skip = start as u64 - (dis.address() - address);
-                                dis.skip(skip);
-                                block_address = dis.address();
-
-                                debug!("{name}: {block_address:#x} offset {start:#x}");
-
-                                let tail = &data[start..];
-                                let mut size = block_size;
-                                let block;
-                                loop {
-                                    if size > tail.len() {
-                                        block = tail;
-                                        break;
-                                    }
-                                    let n = dis.decode_len(&tail[..size]);
-                                    if n != 0 {
-                                        block = &tail[..n];
-                                        break;
-                                    }
-                                    // decode_len found big block of zeroes
-                                    size = tail.iter()
-                                        .position(|i| *i != 0)
-                                        .unwrap_or(tail.len());
-                                    debug!("{name}: {block_address:#x} found block of zeros, {size} bytes");
-                                    size += block_size;
-                                }
-                                block_len = block.len();
-
-                                if tx.send(Message::Offset(start + block_len)).is_err() {
-                                    return Ok(());
-                                }
-
-                                debug!("{name}: {block_address:#x} disassemble {block_len} bytes");
-
-                                buffer.clear();
-                                let mut out = std::io::Cursor::new(&mut buffer);
-                                dis.print(&mut out, block, start == 0)?;
-                                decoded = (dis.address() - block_address) as usize;
-                            }
-                            Message::Print => {
-                                debug!("{name}: {block_address:#x} print {} bytes", buffer.len());
-
-                                if let Err(err) = stdout.lock().write_all(&buffer) {
-                                    if err.kind() == io::ErrorKind::BrokenPipe {
-                                        break;
-                                    } else {
-                                        return Err(err);
-                                    }
-                                }
-
-                                if decoded != block_len {
-                                    stdout.lock().flush()?;
-                                    let end = dis.address();
-                                    error!("{name}: {block_address:#x}:{end:#x} decoded {decoded} bytes, expect {block_len} bytes");
-                                    return Ok(());
-                                }
-
-                                if tx.send(Message::Print).is_err() {
-                                    return Ok(());
-                                }
-                            }
-                        }
-                    }
-
-                    Ok(())
-                });
-            }
-        });
-
         Ok(())
     }
 
@@ -457,7 +339,8 @@ impl<'a> App<'a> {
         };
 
         let info = self.create_info();
-        let res = Decoder::new(self.arch, address, self.opts)
+        let res = self
+            .create_decoder(address)
             .printer(info, section_name)
             .print(&mut out, data, true);
 
